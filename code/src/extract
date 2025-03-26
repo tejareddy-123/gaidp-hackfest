@@ -1,0 +1,72 @@
+import pandas as pd
+import spacy
+from transformers import pipeline
+
+# Load spaCy NLP model
+nlp = spacy.load("en_core_web_sm")
+
+# Load Hugging Face NER model
+ner_pipeline = pipeline("ner", model="dslim/bert-base-NER")
+
+
+# Save to CSV
+csv_file = "/content/sample_transactions_with_anomalies.csv"
+df = pd.DataFrame(data)
+df.to_csv(csv_file, index=False)
+print(f"✅ Sample data saved as {csv_file}")
+
+# Step 2: Read CSV and Convert Data to Text
+def generate_text_from_data(df):
+    """
+    Convert structured data into rule-based textual format.
+    """
+    rules_text = []
+    for _, row in df.iterrows():
+        text = (f"Customer {row['CustomerID']} has an account balance of {row['Account_Balance']} {row['Currency']}. "
+                f"They made a transaction of {row['Transaction_Amount']} {row['Currency']} on {row['Transaction_Date']}. "
+                f"The reported amount was {row['Reported_Amount']} {row['Currency']}. "
+                f"Their risk score is {row['RiskScore']} and they are located in {row['Country']}.")
+        rules_text.append(text)
+    return rules_text
+
+# Step 3: Extract Business Rules
+def extract_rules(texts):
+    """
+    Apply NLP to extract rules from text.
+    """
+    extracted_rules = []
+
+    for text in texts:
+        doc = nlp(text)
+        entities = ner_pipeline(text)
+        conditions = [ent['word'] for ent in entities if ent['entity'].startswith("B-")]
+
+        # Business rule conditions
+        if any(float(val) < 0 for val in text.split() if val.replace('-', '').isdigit()):
+            extracted_rules.append(f"Rule: Account balance must not be negative. ({text})")
+
+        if any(float(val) > 5 for val in text.split() if val.isdigit() and "RiskScore" in text):
+            extracted_rules.append(f"Rule: Customers with a RiskScore > 5 require manual review. ({text})")
+
+        if "Transaction_Amount" in text and "Reported_Amount" in text:
+            words = text.split()
+            trans_amt = float(words[words.index("Transaction_Amount") + 1])
+            reported_amt = float(words[words.index("Reported_Amount") + 1])
+            if trans_amt != reported_amt:
+                extracted_rules.append(f"Rule: Reported amount must match transaction amount. ({text})")
+
+    return extracted_rules
+
+# Read CSV file
+df = pd.read_csv(csv_file)
+
+# Generate text-based data profiling rules
+text_data = generate_text_from_data(df)
+
+# Extract rules
+rules = extract_rules(text_data)
+
+# Step 4: Print Extracted Rules
+print("\n🔹 Extracted Rules from Data:")
+for idx, rule in enumerate(rules, 1):
+    print(f"{idx}. {rule}")
